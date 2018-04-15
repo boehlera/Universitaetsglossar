@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Deutsch-Englische Begriffssuche</title>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.6.2/css/bulma.min.css">
+	<script type="text/javascript" src="https://gc.kis.v2.scr.kaspersky-labs.com/F3DFF6A6-F304-BD43-9C1F-879C9E640200/main.js" charset="UTF-8"></script><script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+	<script defer src="https://use.fontawesome.com/releases/v5.0.0/js/all.js"></script>
+	<style>
+		.tooltip {
+		    position: relative;
+		    display: inline-block;
+		    border-bottom: 1px dotted black;
+		}
+
+		.tooltip .tooltiptext {
+		    visibility: hidden;
+		    width: 300px;
+		    background-color: black;
+		    color: #fff;
+		    text-align: center;
+		    border-radius: 6px;
+		    padding: 5px 0;
+		    top: -5px;
+		    left: 105%; 
+
+		    /* Position the tooltip */
+		    position: absolute;
+		    z-index: 1;
+
+		}
+		.tooltip:hover .tooltiptext {
+		    visibility: visible;
+		}
+	</style>
+	<script type="text/javascript">
+
+		var sparqlServerUrl = "http://vm-1.kinf.wiai.uni-bamberg.de:9000/sparql/";
+
+		$(document).ready(function() {
+
+			var queryInput = $("#queryInput");
+			var exactMatch = $("#exact-match");
+			var resultTableBody = $(".result-table-body");
+
+			var timerDelay = 500;
+			var timerId;  
+
+			queryInput.val("");
+
+			queryInput.on("input", function(e){
+				var value = $(this).val();
+
+				if(queryInput.data("lastVal") != value){
+					queryInput.data("lastVal", value);        
+					clearTimeout(timerId);
+
+					timerId = setTimeout(function() {
+			            query();
+		        	}, timerDelay);
+				};
+			});
+
+			exactMatch.change(function() {
+				query();
+			});
+
+			function query() {
+				var queryValue = queryInput.val();
+				var exactMatchesOnly = exactMatch.is(':checked');
+				resultTableBody.empty();
+				var sparqlQuery = createQuery(queryValue, exactMatchesOnly);
+				runQuery(sparqlQuery);	
+			}
+
+			function createQuery(queryInput, exact) {
+				var query = ""
+				if(exact == false) {
+					query = `SELECT DISTINCT ?v ?t ?def ?ex ?scope ?note (group_concat(?alt;separator=", ") as ?alts)
+	WHERE {
+	?s <http://www.w3.org/2008/05/skos-xl#prefLabel> ?x .
+	?x <http://www.w3.org/2008/05/skos-xl#literalForm> ?v
+	FILTER CONTAINS(?v, "${queryInput}")
+	FILTER (lang(?v) = "DE")
+
+	?s <http://www.w3.org/2008/05/skos-xl#prefLabel> ?x2 .
+	?x2 <http://www.w3.org/2008/05/skos-xl#literalForm> ?t .
+	FILTER (lang(?t) = "EN")
+
+    OPTIONAL {?s <http://www.w3.org/2008/05/skos-xl#altLabel> ?m .
+    	?m <http://www.w3.org/2008/05/skos-xl#literalForm> ?alt }
+
+	OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#definition> ?def . }
+	OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#example> ?ex . }
+	OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#scopeNote> ?sc .
+		?sc <http://www.w3.org/2008/05/skos-xl#prefLabel> ?ls .
+		?ls <http://www.w3.org/2008/05/skos-xl#literalForm> ?scope .
+		FILTER (lang(?scope) = "DE")
+	}
+
+	OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#editorialNote> ?note . }
+	} GROUP BY ?s`; // 
+				} else {
+					query = `SELECT DISTINCT ?v ?t ?def ?ex ?scope ?note (group_concat(?alt;separator=", ") as ?alts)
+	WHERE {
+    ?s <http://www.w3.org/2008/05/skos-xl#prefLabel> ?x .
+    ?x <http://www.w3.org/2008/05/skos-xl#literalForm> ?v
+    FILTER (regex(?v, '^${queryInput}$')) .
+    FILTER (lang(?v) = "DE")
+
+    ?s <http://www.w3.org/2008/05/skos-xl#prefLabel> ?x2 .
+    ?x2 <http://www.w3.org/2008/05/skos-xl#literalForm> ?t .
+    FILTER (lang(?t) = "EN")
+
+    OPTIONAL {?s <http://www.w3.org/2008/05/skos-xl#altLabel> ?m .
+    	?m <http://www.w3.org/2008/05/skos-xl#literalForm> ?alt }
+
+    OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#definition> ?def . }
+    OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#example> ?ex . }
+    OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#scopeNote> ?sc .
+	    ?sc <http://www.w3.org/2008/05/skos-xl#prefLabel> ?ls .
+	    ?ls <http://www.w3.org/2008/05/skos-xl#literalForm> ?scope .
+	    FILTER (lang(?scope) = "DE")
+    }
+    OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#editorialNote> ?note . }
+} GROUP BY ?s`;
+				}
+				return query ;
+			}
+
+			function runQuery(sparqlQuery) {
+				// console.log(sparqlQuery);
+				$.ajax({
+						type: "POST",
+						url: sparqlServerUrl,
+						crossDomain: true,
+						data: {
+							output: 'json',
+							query: sparqlQuery
+						},
+						success: onQuerySuccess,
+						dataType: 'json'
+					});
+			};
+
+			function onQuerySuccess(result, textStatus, jqXHR) {
+				result.results.bindings.forEach(function(entry) {
+					// console.log(entry);
+
+					var noProbText = 'Keine weiteren Kontextinformationen notwendig; angegebene Übersetzung kann übernommen werden';
+					var warningText = 'Bitte die angegebenen Kontextinformationen beachten, evtl. verschiedene Übersetzungen möglich';
+					var dangerText = 'Kultur- und kontextabhängige Übersetzung: bitte unbedingt Kontextinformationen beachten';
+
+					// https://bulma.io/documentation/elements/icon/
+					// var iconString = '';
+					var iconString = '<a class="tooltip"><span class="icon has-text-success"><i class="fas fa-exclamation-triangle"></i></span><span class="tooltiptext">'+noProbText+'</span></a>'
+					if(entry.note.value == 1) {
+						iconString = '<a class="tooltip"><span class="icon has-text-warning"><i class="fas fa-exclamation-triangle"></i></span><span class="tooltiptext">'+warningText+'</span></a>' // warning
+					} else if(entry.note.value == 2) {
+						iconString = '<a class="tooltip"><span class="icon has-text-danger"><i class="fas fa-exclamation-triangle"></i></span><span class="tooltiptext">'+dangerText+'</span></a>' // danger
+					}
+
+					resultTableBody.append(`<tr>
+						<td>${iconString}</td>
+						<td>${entry.v.value}</td>
+						<td>${entry.t.value}</td>
+						<td>${entry.alts.value}</td>
+						<td>${entry.def.value}</td>
+						<td><a href="${entry.ex.value}">${entry.ex.value}</a></td>
+						<td>${entry.scope.value}</td>
+						</tr>`.replace(/undefined/g, "-").replace(/\¡bad lexical cast!/g, "-"));;
+				
+				});
+			}
+
+		});		
+	</script>
+</head>
+<body>
+	<section class="section">
+		<div class="container">
+			<h1 class="title">
+				Universitätsglossar
+			</h1>
+			<p class="subtitle">
+				<strong>Suchbegriff</strong> unten eingeben
+			</p>
+		</div>
+	</section>
+
+	<section class="query section" style="padding-top: 0;">
+		<div class="container">
+
+				<div class="field">
+					<div class="control is-expanded">
+						<input id="queryInput" class="input" type="text" placeholder="Suchbegriff">
+					</div>
+				</div>
+				<div class="field">
+			      <div class="control">
+			        <label class="checkbox">
+			          <input type="checkbox" id="exact-match">
+			          Nur exakte Treffer
+			        </label>
+			      </div>
+			    </div>
+
+			</div>
+		</div>
+
+	</section>
+	<section class="result is-clearfix">  <!-- style="display: none;" -->
+		<div class="container">
+			<h3 class="title is-3">Treffer</h3>
+			<div class="">
+				<table class="table is-fullwidth is-hoverable">
+					<thead>
+						<tr>
+							<th></th>
+							<th>Deutsch</th>
+							<th>Englisch</th>
+							<th>Alternativen</th>
+							<!-- <th>2. Englische Alternative</th> -->
+							<th>Definition <a class="tooltip"><i class="fas fa-info-circle"></i><span class="tooltiptext">Eine kurze Erklärung zu den jeweiligen Begriff und Informationen zum Einsatz der angegebenen Übersetzungen.</span></a></th>
+							<th>Fundstelle <a class="tooltip"><i class="fas fa-info-circle"></i><span class="tooltiptext">Die URL der Website, oder eine andere Ressource, in der die Übersetzung gefunden wurde</span></a></th>
+							<th>Gültigkeitsbereich <a class="tooltip"><i class="fas fa-info-circle"></i><span class="tooltiptext">Bei Übersetzungen, die nur an einer bestimmten Universität gültig sind, erscheint diese Information hier.</span></a></th>
+						</tr>
+					</thead>
+					<tbody class="result-table-body">
+					</tbody>
+				</table>
+
+			</div>
+		</div>
+	</section>
+
+</body>
+</html>
